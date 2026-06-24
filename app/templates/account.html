@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account Analysis</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c1014;
+      --panel: #141a20;
+      --line: #26313a;
+      --text: #edf2f7;
+      --muted: #9cabb8;
+      --green: #21c982;
+      --yellow: #d6a530;
+      --red: #f06464;
+      --blue: #55a7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header, main { max-width: 1280px; margin: 0 auto; padding: 20px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: 0; }
+    h2 { font-size: 17px; margin: 0 0 10px; letter-spacing: 0; }
+    p { margin: 0; color: var(--muted); }
+    a.button {
+      border: 1px solid var(--line);
+      background: #1d2630;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 9px 12px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    a.button:hover { border-color: var(--blue); }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .panel, .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .metric strong { display: block; font-size: 22px; }
+    .metric span { color: var(--muted); }
+    .section { margin-bottom: 18px; }
+    .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-right: 6px; }
+    .env-live { border-color: #8b3a3a; color: var(--red); }
+    .env-demo { border-color: #2b6c50; color: var(--green); }
+    .good { color: var(--green); }
+    .warn { color: var(--yellow); }
+    .bad { color: var(--red); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    code { color: #b8d7ff; }
+    @media (max-width: 900px) {
+      header { display: block; }
+      header .button { display: inline-block; margin-top: 12px; }
+      .grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      table { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  {% macro amount(value, digits=4) -%}
+    {{ ("%." ~ digits ~ "f")|format(value) if value is not none else "n/a" }}
+  {%- endmacro %}
+  <header>
+    <div>
+      <h1>Account Analysis</h1>
+      <p>Read-only Bybit account data and synced learning journal. No automatic order execution.</p>
+    </div>
+    <a class="button" href="/" target="_blank" rel="noreferrer">Signal Dashboard</a>
+  </header>
+  <main>
+    <section class="panel section">
+      <h2>Account Source</h2>
+      <p>
+        <span class="badge {{ 'env-demo' if account.bybit_env == 'demo' else 'env-live' }}">{{ account.bybit_env|upper }}</span>
+        <span class="badge">{{ account.account_type }}</span>
+        <span class="badge">{{ "API keys configured" if account.keys_configured else "API keys not configured" }}</span>
+      </p>
+      <p>Fetched at={{ account.fetched_at or "not available" }}</p>
+      {% if account.error %}<p class="bad">Account API: {{ account.error }}</p>{% endif %}
+    </section>
+
+    <section class="grid" aria-label="wallet balance">
+      <div class="metric"><span>Total equity</span><strong>{{ amount(account.total_equity) }}</strong><p>USD</p></div>
+      <div class="metric"><span>Wallet balance</span><strong>{{ amount(account.total_wallet_balance) }}</strong><p>USD</p></div>
+      <div class="metric"><span>Available balance</span><strong>{{ amount(account.total_available_balance) }}</strong><p>USD</p></div>
+      <div class="metric"><span>Perp unrealized PnL</span><strong class="{{ 'good' if account.total_perp_upl and account.total_perp_upl > 0 else 'bad' if account.total_perp_upl and account.total_perp_upl < 0 else '' }}">{{ amount(account.total_perp_upl) }}</strong><p>USD</p></div>
+      <div class="metric"><span>Margin balance</span><strong>{{ amount(account.total_margin_balance) }}</strong><p>USD</p></div>
+      <div class="metric"><span>Initial margin</span><strong>{{ amount(account.total_initial_margin) }}</strong><p>USD</p></div>
+      <div class="metric"><span>Maintenance margin</span><strong>{{ amount(account.total_maintenance_margin) }}</strong><p>USD</p></div>
+      <div class="metric"><span>Environment</span><strong>{{ account.bybit_env|upper }}</strong><p>BYBIT_ENV</p></div>
+    </section>
+
+    <section class="panel section">
+      <h2>Coin Balances</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Coin</th>
+            <th>Equity</th>
+            <th>USD value</th>
+            <th>Wallet</th>
+            <th>Withdrawable</th>
+            <th>Unrealized PnL</th>
+            <th>Cum realized PnL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for coin in account.coins %}
+          <tr>
+            <td><code>{{ coin.coin }}</code></td>
+            <td>{{ amount(coin.equity) }}</td>
+            <td>{{ amount(coin.usd_value) }}</td>
+            <td>{{ amount(coin.wallet_balance) }}</td>
+            <td>{{ amount(coin.available_to_withdraw) }}</td>
+            <td class="{{ 'good' if coin.unrealised_pnl and coin.unrealised_pnl > 0 else 'bad' if coin.unrealised_pnl and coin.unrealised_pnl < 0 else '' }}">{{ amount(coin.unrealised_pnl) }}</td>
+            <td class="{{ 'good' if coin.cum_realised_pnl and coin.cum_realised_pnl > 0 else 'bad' if coin.cum_realised_pnl and coin.cum_realised_pnl < 0 else '' }}">{{ amount(coin.cum_realised_pnl) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">No coin balance is available from the account API.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="grid" aria-label="learning journal">
+      <div class="metric"><span>Valid learning samples</span><strong>{{ outcomes.valid_learning_samples }}</strong><p>matched + manual_adjusted</p></div>
+      <div class="metric"><span>Matched</span><strong>{{ outcomes.matched_count }}</strong><p>entry near bot zone</p></div>
+      <div class="metric"><span>Manual adjusted</span><strong>{{ outcomes.manual_adjusted_count }}</strong><p>same signal, manual entry adjusted</p></div>
+      <div class="metric"><span>Uncertain</span><strong>{{ outcomes.uncertain_count }}</strong><p>not used for learning</p></div>
+      <div class="metric"><span>Today net PnL</span><strong class="{{ 'good' if learning.today_net_pnl > 0 else 'bad' if learning.today_net_pnl < 0 else '' }}">{{ amount(learning.today_net_pnl) }}</strong><p>USDT</p></div>
+      <div class="metric"><span>Today net R</span><strong>{{ amount(learning.today_net_r) }}</strong><p>R multiple</p></div>
+      <div class="metric"><span>Today win rate</span><strong>{{ "%.2f"|format(learning.today_win_rate) ~ "%" if learning.today_win_rate is not none else "n/a" }}</strong><p>valid samples only</p></div>
+      <div class="metric"><span>All-time expectancy</span><strong>{{ "%.4f"|format(learning.all_time_expectancy_r) ~ "R" if learning.all_time_expectancy_r is not none else "n/a" }}</strong><p>matched + manual_adjusted</p></div>
+      <div class="metric"><span>All-time profit factor</span><strong>{{ "%.4f"|format(learning.all_time_profit_factor) if learning.all_time_profit_factor is not none else "n/a" }}</strong><p>valid samples only</p></div>
+      <div class="metric"><span>Journal signals</span><strong>{{ learning.journal_signal_count }}</strong><p>Telegram-sent records</p></div>
+    </section>
+
+    <section class="panel section">
+      <h2>Learning Status</h2>
+      <p>{{ learning.sample_warning }}</p>
+      <p>{{ learning.ml_status }}</p>
+      <p>Cooldowns={{ ", ".join(learning.active_symbol_cooldowns) if learning.active_symbol_cooldowns else "none" }}</p>
+      <p>Fresh loss cooldowns={{ ", ".join(learning.active_fresh_loss_cooldowns) if learning.active_fresh_loss_cooldowns else "none" }}</p>
+      <p>Recent signal cooldowns={{ ", ".join(learning.active_recent_signal_cooldowns) if learning.active_recent_signal_cooldowns else "none" }}</p>
+      <p>Adaptive penalties={{ learning.adaptive_penalty_summary }}</p>
+    </section>
+
+    <section class="panel section">
+      <h2>Outcome Buckets</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Bucket</th>
+            <th>Count</th>
+            <th>Realized PnL</th>
+            <th>Fee</th>
+            <th>Funding</th>
+            <th>Net PnL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bucket in outcomes.buckets %}
+          <tr>
+            <td><code>{{ bucket.match_confidence }}</code></td>
+            <td>{{ bucket.count }}</td>
+            <td>{{ amount(bucket.realized_pnl) }}</td>
+            <td>{{ amount(bucket.fee) }}</td>
+            <td>{{ amount(bucket.funding) }}</td>
+            <td class="{{ 'good' if bucket.net_pnl > 0 else 'bad' if bucket.net_pnl < 0 else '' }}">{{ amount(bucket.net_pnl) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">No synced outcomes yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel section">
+      <h2>Recent Outcomes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Closed</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>Qty</th>
+            <th>Net PnL</th>
+            <th>R</th>
+            <th>Outcome</th>
+            <th>Match</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in outcomes.recent %}
+          <tr>
+            <td>{{ item.closed_at }}</td>
+            <td><code>{{ item.symbol }}</code></td>
+            <td>{{ item.side or "n/a" }}</td>
+            <td>{{ amount(item.actual_entry, 6) }}</td>
+            <td>{{ amount(item.actual_exit, 6) }}</td>
+            <td>{{ amount(item.qty, 4) }}</td>
+            <td class="{{ 'good' if item.net_pnl > 0 else 'bad' if item.net_pnl < 0 else '' }}">{{ amount(item.net_pnl) }}</td>
+            <td>{{ amount(item.result_r, 4) }}</td>
+            <td>{{ item.outcome_type }}</td>
+            <td><code>{{ item.match_confidence }}</code></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10">No recent outcomes are available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

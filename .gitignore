@@ -1,0 +1,4 @@
+.venv
+.env
+data/customer_subscriptions.sqlite3
+AGENTS.md

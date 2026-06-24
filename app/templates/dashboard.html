@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signal Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c1014;
+      --panel: #141a20;
+      --line: #26313a;
+      --text: #edf2f7;
+      --muted: #9cabb8;
+      --green: #21c982;
+      --yellow: #d6a530;
+      --red: #f06464;
+      --blue: #55a7ff;
+      --cyan: #66d9e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header, main { max-width: 1280px; margin: 0 auto; padding: 20px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: 0; }
+    h2 { font-size: 17px; margin: 0 0 8px; letter-spacing: 0; }
+    p { margin: 0; color: var(--muted); }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    button, a.button {
+      border: 1px solid var(--line);
+      background: #1d2630;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 9px 12px;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    button:hover, a.button:hover { border-color: var(--blue); }
+    .grid { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .metric, .signal {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .metric strong { display: block; font-size: 22px; }
+    .metric span { color: var(--muted); }
+    .summary { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 18px; }
+    .signals { display: grid; gap: 12px; }
+    .signal { display: grid; grid-template-columns: 180px 1fr 300px; gap: 16px; align-items: start; }
+    .symbol { font-size: 18px; font-weight: 700; }
+    .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin: 0 4px 4px 0; }
+    .delivery { border-color: #36536a; color: var(--cyan); }
+    .sent { border-color: #2c7858; color: var(--green); }
+    .not-sent { border-color: #72602d; color: var(--yellow); }
+    .env-live { border-color: #8b3a3a; color: var(--red); }
+    .env-demo { border-color: #2b6c50; color: var(--green); }
+    .TRADE_READY { color: var(--green); }
+    .WATCH { color: var(--blue); }
+    .WAIT { color: var(--yellow); }
+    .AVOID { color: var(--red); }
+    .targets { display: grid; gap: 4px; }
+    .evidence { color: var(--muted); margin-top: 8px; }
+    .evidence div { margin-top: 3px; }
+    code { color: #b8d7ff; }
+    @media (max-width: 900px) {
+      header { display: block; }
+      .actions { margin-top: 12px; }
+      .grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      .summary, .signal { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Signal Dashboard</h1>
+      <p>Manual decision support using real Bybit market data. No automatic order execution.</p>
+    </div>
+    <div class="actions">
+      <button type="button" onclick="triggerScan(event)">Run Scan</button>
+      <a class="button" href="/account-analysis" target="_blank" rel="noreferrer">Account Analysis</a>
+      <a class="button" href="/api/telegram/dry-run" target="_blank" rel="noreferrer">Telegram Dry Run</a>
+    </div>
+  </header>
+  <main>
+    <section class="grid" aria-label="scan status">
+      <div class="metric"><strong>{{ status.symbols_scanned }}</strong><span>symbols scanned</span></div>
+      <div class="metric"><strong>{{ status.trade_ready_count }}</strong><span>trade ready</span></div>
+      <div class="metric"><strong>{{ status.watch_count }}</strong><span>watch</span></div>
+      <div class="metric"><strong>{{ status.wait_count }}</strong><span>wait</span></div>
+      <div class="metric"><strong>{{ status.avoid_count }}</strong><span>avoid</span></div>
+    </section>
+
+    <section class="summary" aria-label="selection status">
+      <div class="metric">
+        <span>Telegram selection</span>
+        <strong style="font-size: 16px;">{{ status.telegram_status }}</strong>
+        <p>Dashboard shows top 3 TRADE_READY candidates. Telegram sends top {{ max_alerts }} selected candidate(s).</p>
+        <p>Last scan={{ status.last_scan_at or "pending" }} | scanned top {{ status.scan_market_limit or status.top_markets }} / max {{ status.max_scan_markets or status.top_markets }}</p>
+        <p>{{ status.scan_expansion_reason }}</p>
+        {% if status.active_fresh_loss_cooldowns %}<p class="AVOID">Fresh loss cooldown: {{ ", ".join(status.active_fresh_loss_cooldowns) }}</p>{% endif %}
+        {% if status.active_recent_signal_cooldowns %}<p class="WATCH">Recent signal cooldown: {{ ", ".join(status.active_recent_signal_cooldowns) }}</p>{% endif %}
+        {% if status.telegram_best_signal_blocked_reason %}<p class="WATCH">Telegram block: {{ status.telegram_best_signal_blocked_reason }}</p>{% endif %}
+        {% if status.error %}<p class="AVOID">Error: {{ status.error }}</p>{% endif %}
+      </div>
+      <div class="metric">
+        <span>Environment</span>
+        <strong style="font-size: 16px;">
+          <span class="badge {{ 'env-demo' if bybit_env == 'demo' else 'env-live' }}">{{ bybit_env|upper }}</span>
+          {{ status.data_source }}
+        </strong>
+        <p>Best signal={{ status.best_signal_symbol or "none" }} {{ status.best_signal_side or "" }}</p>
+        <p>Telegram selection score={{ "%.2f"|format(status.best_signal_score) if status.best_signal_score else "n/a" }}</p>
+        <p>{{ status.ml_status }}</p>
+      </div>
+    </section>
+
+    <section class="metric" style="margin-bottom: 18px;">
+      <h2>Signal Analysis Candidates</h2>
+      <p>Only Telegram-sent signals are recorded into the learning journal. Watchlist candidates are visible for context only.</p>
+    </section>
+
+    <section class="signals">
+      {% for signal in signals %}
+      {% set telegram_selected = signal.alert_eligible %}
+      {% set telegram_sent = telegram_selected and status.telegram_status and signal.symbol in status.telegram_status %}
+      <article class="signal">
+        <div>
+          <div class="symbol">{{ signal.symbol }}</div>
+          <div><span class="badge {{ signal.state }}">{{ signal.state }}</span> <span class="badge">{{ signal.side }}</span></div>
+          <div>
+            {% if telegram_selected %}
+            <span class="badge {{ 'sent' if telegram_sent else 'delivery' }}">{{ "Telegram Sent" if telegram_sent else "Telegram Selected" }}</span>
+            {% else %}
+            <span class="badge not-sent">Watchlist / Not Sent</span>
+            {% endif %}
+          </div>
+          <p>Confluence score {{ signal.score }}/100</p>
+        </div>
+        <div>
+          <div>Entry: <code>{{ signal.entry_label }}</code></div>
+          <div>SL: <code>{{ "%.6g"|format(signal.stop_loss) if signal.stop_loss else "n/a" }}</code></div>
+          <div>RR: <code>{{ "%.2f"|format(signal.risk_reward) if signal.risk_reward else "n/a" }}</code></div>
+          <div>Liquidation: <code>{{ signal.liquidation_check_status }}</code>{% if signal.liquidation_price %} @ <code>{{ "%.6g"|format(signal.liquidation_price) }}</code>{% endif %}</div>
+          <p>{{ signal.liquidation_check_reason }}</p>
+          <p>{{ signal.alert_reason }}</p>
+          <div class="evidence">
+            {% for item in signal.evidence[:5] %}
+            <div>{{ item.name }}: {{ item.status }} - {{ item.detail }}</div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="targets">
+          {% for target in signal.targets %}
+          <div>{{ target.label }} <code>{{ "%.6g"|format(target.price) }}</code> ETA ~{{ target.estimated_minutes }} min</div>
+          {% else %}
+          <div>No TP plan for this state.</div>
+          {% endfor %}
+          <p>{{ signal.probability_label }} | sample {{ signal.sample_size }}</p>
+        </div>
+      </article>
+      {% else %}
+      <article class="metric">
+        <strong style="font-size: 16px;">No TRADE_READY candidate on the current dashboard</strong>
+        <p>The service may still have WATCH, WAIT, or AVOID scan results. Telegram remains silent until a candidate passes selection.</p>
+      </article>
+      {% endfor %}
+    </section>
+  </main>
+  <script>
+    async function triggerScan(event) {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = "Scanning...";
+      try {
+        await fetch("/api/scan", { method: "POST" });
+        window.location.reload();
+      } finally {
+        button.disabled = false;
+        button.textContent = "Run Scan";
+      }
+    }
+    setTimeout(() => window.location.reload(), 120000);
+  </script>
+</body>
+</html>
